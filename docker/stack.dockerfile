@@ -19,16 +19,8 @@ print(f"Saved PyPI bundles from {bundle_dir}")
 PY
 
 RUN --mount=type=bind,source=.,target=/project-root \
-    cd /project-root && \
-    uv pip install ".[mcp]" --system --no-deps && \
-    python - <<'PY'
-import os, shutil, appworld
-target = os.path.join(os.path.dirname(appworld.__file__), ".source")
-os.makedirs(target, exist_ok=True)
-for name in os.listdir("/tmp/appworld-bundles"):
-    shutil.copy2(os.path.join("/tmp/appworld-bundles", name), os.path.join(target, name))
-print(f"Restored bundles into {target}")
-PY
+    cd /project-root && uv pip install ".[mcp]" --system && \
+    cp -a /tmp/appworld-bundles/. "$(python -c 'import appworld, os; print(os.path.join(os.path.dirname(appworld.__file__), ".source"))')/"
 
 RUN appworld install && \
     if appworld download data --help 2>/dev/null | grep -q -- "--mode"; then \
