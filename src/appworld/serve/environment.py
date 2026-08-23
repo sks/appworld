@@ -3,7 +3,7 @@ from functools import cache
 from typing import Any, cast
 
 import uvicorn
-from fastapi import Body, FastAPI, HTTPException
+from fastapi import Body, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -16,6 +16,11 @@ from appworld.common.io import dump_yaml, read_file
 from appworld.common.system import maybe_kill_processes
 from appworld.environment import AppWorld, AppWorldInitDefaults
 from appworld.evaluator import evaluate_task, evaluate_tasks
+from appworld.serve.experiment_status import (
+    active_world_summary,
+    list_experiments,
+    task_status_for_experiment,
+)
 from appworld.task import Task
 
 
@@ -294,6 +299,54 @@ async def launch_playground() -> str:
     return load_playground_html()
 
 
+@app.get("/dashboard", response_class=HTMLResponse)
+async def launch_dashboard() -> str:
+    return load_dashboard_html()
+
+
+@app.get("/experiments")
+async def show_experiments() -> dict[str, Any]:
+    return {"output": list_experiments()}
+
+
+@app.get("/experiments/{experiment_name}/tasks/status")
+async def show_experiment_task_status(
+    experiment_name: str,
+    task_ids: str | None = Query(default=None),
+    dataset: str | None = Query(default=None),
+) -> dict[str, Any]:
+    parsed_task_ids: list[str] | None = None
+    if task_ids:
+        parsed_task_ids = [task_id.strip() for task_id in task_ids.split(",") if task_id.strip()]
+    active_task_id = world.task_id if world is not None else None
+    output = task_status_for_experiment(
+        experiment_name,
+        task_ids=parsed_task_ids,
+        dataset=dataset,
+        active_task_id=active_task_id,
+    )
+    return {"output": output}
+
+
+@app.get("/status/active")
+async def show_active_world_status() -> dict[str, Any]:
+    return {"output": active_world_summary(world)}
+
+
+@app.post("/experiments/{experiment_name}/tasks/{task_id}/evaluate")
+async def evaluate_experiment_task(
+    experiment_name: str,
+    task_id: str,
+) -> dict[str, Any]:
+    test_tracker = evaluate_task(
+        task_id=task_id,
+        experiment_name=experiment_name,
+        suppress_errors=True,
+    )
+    output = test_tracker.to_dict(stats_only=False)
+    return {"output": output}
+
+
 def run(port: int = DEFAULT_REMOTE_ENVIRONMENT_PORT) -> None:
     """Start AppWorld Environment Server."""
     maybe_kill_processes("port", [port])
@@ -307,4 +360,10 @@ def run(port: int = DEFAULT_REMOTE_ENVIRONMENT_PORT) -> None:
 @cache
 def load_playground_html() -> str:
     file_path = os.path.join(this_directory, "playground.html")
+    return cast(str, read_file(file_path))
+
+
+@cache
+def load_dashboard_html() -> str:
+    file_path = os.path.join(this_directory, "dashboard.html")
     return cast(str, read_file(file_path))

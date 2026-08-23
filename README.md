@@ -633,6 +633,39 @@ You can also try out the interactive [Jupyter notebook](notebooks/interactive_sh
 
 </details>
 
+<details>
+<summary> ::Click:: Experiment task-status dashboard </summary>
+
+---
+
+When the environment server is running (`appworld serve environment` or `appworld play`), open the **experiment dashboard** in your browser:
+
+```bash
+open http://127.0.0.1:8000/dashboard
+```
+
+The dashboard is **read-only** for task status (GET endpoints). It scans `./experiments/outputs/{experiment_name}/tasks/` under `APPWORLD_ROOT` and shows per-task status:
+
+| Status | Meaning |
+| --- | --- |
+| `not_started` | No output directory for this task yet |
+| `in_progress` | Output exists but agent has not marked finished and no evaluation report |
+| `finished` | `misc/finished` exists but no evaluation report yet |
+| `pass` / `fail` | Parsed from `evaluation/report.md` (`Num Passed/Failed/Total Tests`) |
+| `active` | This task is the currently initialized AppWorld world on the server |
+
+Use the experiment dropdown and optional dataset filter (`dev`, `train`, etc.) or comma-separated **task IDs** (e.g. benchmark cohort). The page polls `/status/active` and `/experiments/{name}/tasks/status` every few seconds. When a world is live, a banner shows the active `task_id`, experiment name, simulated datetime, eval-criteria status, run phase (in progress / agent finished / pass / fail), and instruction snippet — plus a link to the playground.
+
+**Re-evaluate** runs official scoring via `POST /experiments/{name}/tasks/{task_id}/evaluate` (writes/updates `evaluation/report.md`). **Open in Playground** links to `/playground` for interactive exploration of a single task.
+
+Unlike the playground (execute code, explore APIs), the dashboard is for **batch experiment monitoring** across many tasks.
+
+URL parameters: `?experiment=genie_routing&task_ids=29caf6f_1,b0a8eae_3` or `?experiment=genie_routing&dataset=dev`
+
+---
+
+</details>
+
 <details><summary> ::Click:: Example AppWorld output directory structure </summary>
 
 ---

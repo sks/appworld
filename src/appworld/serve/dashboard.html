@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AppWorld Experiment Dashboard</title>
+<link rel="icon" href="./static/icon.png" type="image/png">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+    .status-badge {
+        display: inline-block;
+        padding: 2px 10px;
+        border-radius: 9999px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+    }
+    .status-not_started { background-color: #e5e7eb; color: #374151; }
+    .status-in_progress { background-color: #dbeafe; color: #1d4ed8; }
+    .status-finished { background-color: #fef3c7; color: #b45309; }
+    .status-pass { background-color: #d1fae5; color: #047857; }
+    .status-fail { background-color: #fee2e2; color: #b91c1c; }
+    .status-active { background-color: #ede9fe; color: #6d28d9; }
+    .instruction-snippet {
+        max-width: 28rem;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+</style>
+</head>
+<body class="bg-gray-100">
+
+    <div class="bg-slate-800 text-white text-center">
+        <div class="max-w-7xl mx-auto p-6 px-6 sm:px-10 md:px-15 lg:px-20 text-center grid grid-cols-3">
+            <div class="flex items-center space-x-0 col-span-2 pl-5">
+                <img src="./static/icon.png" alt="AppWorld Icon" class="h-9 w-9 mr-3">
+                <h1 class="text-2xl font-bold">Experiment Dashboard</h1>
+            </div>
+            <div class="flex items-center justify-end space-x-3 pr-5">
+                <a href="/playground" class="inline-block bg-white text-slate-800 px-4 py-1 rounded-md border-2 border-slate-800 hover:bg-blue-50 flex items-center">
+                    <i class="fas fa-terminal sm:mr-1"></i>
+                    <span class="hidden sm:inline">Playground</span>
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div id="active-banner" class="hidden bg-violet-700 text-white">
+        <div class="max-w-7xl mx-auto px-6 sm:px-10 md:px-15 lg:px-20 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div class="min-w-0 flex-1">
+                <p id="active-banner-title" class="text-sm sm:text-base font-semibold truncate"></p>
+                <p id="active-banner-meta" class="text-xs sm:text-sm opacity-90 mt-0.5"></p>
+                <p id="active-banner-instruction" class="text-xs opacity-80 mt-1 line-clamp-2"></p>
+            </div>
+            <div class="flex items-center gap-3 shrink-0">
+                <a id="active-playground-link" href="/playground" class="inline-flex items-center bg-white text-violet-800 px-3 py-1 rounded-md text-xs font-medium hover:bg-violet-50">
+                    <i class="fas fa-terminal mr-1"></i> Playground
+                </a>
+                <span class="inline-flex items-center text-xs opacity-90">
+                    <span id="poll-pulse" class="inline-block w-2 h-2 rounded-full bg-green-300 mr-2 animate-pulse"></span>
+                    <span id="last-refresh-label">—</span>
+                </span>
+            </div>
+        </div>
+    </div>
+
+    <div class="max-w-7xl mx-auto py-4 px-6 sm:px-10 md:px-15 lg:px-20">
+        <div id="error-banner" class="hidden relative bg-red-100 text-red-800 text-center p-4 rounded-md mb-4 border border-red-300">
+            <p id="error-message" class="text-left"></p>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 mb-4">
+            <div>
+                <label for="host-input" class="block text-sm text-center font-medium">Env. Server</label>
+                <input type="text" id="host-input" class="block w-full px-3 py-1 mt-1 text-gray-800 bg-white border border-gray-300 rounded-md shadow-sm" value="">
+            </div>
+            <div>
+                <label for="experiment-select" class="block text-sm text-center font-medium">Experiment</label>
+                <select id="experiment-select" class="block w-full px-3 py-1 mt-1 text-gray-800 bg-white border border-gray-300 rounded-md shadow-sm">
+                    <option value="">Loading...</option>
+                </select>
+            </div>
+            <div>
+                <label for="dataset-input" class="block text-sm text-center font-medium">Dataset filter (optional)</label>
+                <input type="text" id="dataset-input" class="block w-full px-3 py-1 mt-1 text-gray-800 bg-white border border-gray-300 rounded-md shadow-sm" placeholder="dev, train, test_normal">
+            </div>
+            <div>
+                <label for="task-ids-input" class="block text-sm text-center font-medium">Task IDs (optional)</label>
+                <input type="text" id="task-ids-input" class="block w-full px-3 py-1 mt-1 text-gray-800 bg-white border border-gray-300 rounded-md shadow-sm" placeholder="29caf6f_1,b0a8eae_3">
+            </div>
+            <div>
+                <label for="refresh-interval" class="block text-sm text-center font-medium">Refresh interval</label>
+                <select id="refresh-interval" class="block w-full px-3 py-1 mt-1 text-gray-800 bg-white border border-gray-300 rounded-md shadow-sm">
+                    <option value="3000">3 seconds</option>
+                    <option value="5000" selected>5 seconds</option>
+                    <option value="10000">10 seconds</option>
+                    <option value="30000">30 seconds</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="flex items-center justify-between mb-3">
+            <p id="summary-text" class="text-sm text-gray-600">Select an experiment to view task status.</p>
+            <button id="refresh-button" class="inline-flex items-center bg-slate-800 text-white px-4 py-1 rounded-md hover:bg-slate-700">
+                <i id="refresh-spinner" class="fas fa-spinner fa-spin hidden mr-2"></i>
+                <i id="refresh-icon" class="fas fa-sync-alt mr-2"></i>
+                Refresh
+            </button>
+        </div>
+
+        <div class="bg-white rounded-lg shadow-md border border-gray-200 overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200 text-sm">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-4 py-3 text-left font-semibold text-gray-700">Task ID</th>
+                        <th class="px-4 py-3 text-left font-semibold text-gray-700">Status</th>
+                        <th class="px-4 py-3 text-left font-semibold text-gray-700">Pass %</th>
+                        <th class="px-4 py-3 text-left font-semibold text-gray-700">Active</th>
+                        <th class="px-4 py-3 text-left font-semibold text-gray-700">Instruction</th>
+                        <th class="px-4 py-3 text-left font-semibold text-gray-700">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="tasks-table-body" class="divide-y divide-gray-100">
+                    <tr>
+                        <td colspan="6" class="px-4 py-8 text-center text-gray-400">No data yet.</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+<script>
+const hostInput = document.getElementById("host-input");
+const experimentSelect = document.getElementById("experiment-select");
+const datasetInput = document.getElementById("dataset-input");
+const refreshIntervalSelect = document.getElementById("refresh-interval");
+const refreshButton = document.getElementById("refresh-button");
+const refreshSpinner = document.getElementById("refresh-spinner");
+const refreshIcon = document.getElementById("refresh-icon");
+const tasksTableBody = document.getElementById("tasks-table-body");
+const summaryText = document.getElementById("summary-text");
+const errorBanner = document.getElementById("error-banner");
+const errorMessage = document.getElementById("error-message");
+const activeBanner = document.getElementById("active-banner");
+const activeBannerTitle = document.getElementById("active-banner-title");
+const activeBannerMeta = document.getElementById("active-banner-meta");
+const activeBannerInstruction = document.getElementById("active-banner-instruction");
+const activePlaygroundLink = document.getElementById("active-playground-link");
+const lastRefreshLabel = document.getElementById("last-refresh-label");
+const taskIdsInput = document.getElementById("task-ids-input");
+
+let pollTimer = null;
+let lastRefreshAt = null;
+let lastTaskPayload = null;
+let lastActiveWorld = null;
+
+function baseUrl() {
+    return hostInput.value.replace(/\/$/, "");
+}
+
+function readUrlParams() {
+    const params = new URLSearchParams(window.location.search);
+    return {
+        experiment: params.get("experiment") || "",
+        dataset: params.get("dataset") || "",
+        taskIds: params.get("task_ids") || "",
+    };
+}
+
+function writeUrlParams() {
+    const params = new URLSearchParams();
+    const experiment = experimentSelect.value;
+    const dataset = datasetInput.value.trim();
+    const taskIds = taskIdsInput.value.trim();
+    if (experiment) {
+        params.set("experiment", experiment);
+    }
+    if (dataset) {
+        params.set("dataset", dataset);
+    }
+    if (taskIds) {
+        params.set("task_ids", taskIds);
+    }
+    const query = params.toString();
+    const nextUrl = query ? `?${query}` : window.location.pathname;
+    window.history.replaceState({}, "", nextUrl);
+}
+
+function showError(message) {
+    errorMessage.textContent = message;
+    errorBanner.classList.remove("hidden");
+}
+
+function hideError() {
+    errorBanner.classList.add("hidden");
+}
+
+function statusBadgeClass(status) {
+    return `status-badge status-${status}`;
+}
+
+function formatStatusLabel(status) {
+    return status.replace(/_/g, " ");
+}
+
+function truncateInstruction(text) {
+    if (!text) {
+        return "—";
+    }
+    return text.length > 120 ? `${text.slice(0, 117)}...` : text;
+}
+
+async function fetchJson(path) {
+    const response = await fetch(`${baseUrl()}${path}`);
+    if (!response.ok) {
+        const detail = await response.text();
+        throw new Error(`${response.status} ${response.statusText}: ${detail}`);
+    }
+    return response.json();
+}
+
+async function loadExperiments() {
+    const data = await fetchJson("/experiments");
+    const experiments = data.output || [];
+    experimentSelect.innerHTML = "";
+    if (experiments.length === 0) {
+        const option = document.createElement("option");
+        option.value = "";
+        option.textContent = "(no experiments found)";
+        experimentSelect.appendChild(option);
+        return;
+    }
+    for (const name of experiments) {
+        const option = document.createElement("option");
+        option.value = name;
+        option.textContent = name;
+        experimentSelect.appendChild(option);
+    }
+    const urlParams = readUrlParams();
+    if (urlParams.experiment && experiments.includes(urlParams.experiment)) {
+        experimentSelect.value = urlParams.experiment;
+    } else if (experiments.length > 0) {
+        experimentSelect.value = experiments[0];
+    }
+    if (urlParams.dataset) {
+        datasetInput.value = urlParams.dataset;
+    }
+    if (urlParams.taskIds) {
+        taskIdsInput.value = urlParams.taskIds;
+    }
+}
+
+function formatRunPhase(row) {
+    if (!row) {
+        return "initialized (in memory)";
+    }
+    if (row.status === "pass") {
+        return "evaluated — pass";
+    }
+    if (row.status === "fail") {
+        return "evaluated — fail";
+    }
+    if (row.agent_finished) {
+        return "agent finished — pending eval";
+    }
+    if (row.has_output) {
+        return "run in progress";
+    }
+    return "initialized";
+}
+
+function countByStatus(tasks) {
+    const counts = { pass: 0, fail: 0, active: 0, in_progress: 0, finished: 0, not_started: 0 };
+    for (const task of tasks) {
+        const key = task.status in counts ? task.status : "in_progress";
+        counts[key] += 1;
+    }
+    return counts;
+}
+
+function maybeSyncExperimentFromActive(active) {
+    if (!active || !active.experiment_name) {
+        return false;
+    }
+    const options = Array.from(experimentSelect.options).map((option) => option.value);
+    if (!options.includes(active.experiment_name)) {
+        return false;
+    }
+    if (experimentSelect.value === active.experiment_name) {
+        return false;
+    }
+    experimentSelect.value = active.experiment_name;
+    return true;
+}
+
+async function loadActiveStatus() {
+    const data = await fetchJson("/status/active");
+    const active = data.output;
+    lastActiveWorld = active;
+    if (!active) {
+        activeBanner.classList.add("hidden");
+        return;
+    }
+    if (maybeSyncExperimentFromActive(active)) {
+        await loadTaskStatus();
+    }
+    const row = (lastTaskPayload?.tasks || []).find((task) => task.task_id === active.task_id);
+    const completedLabel = active.task_completed ? "eval criteria met" : "eval criteria not met yet";
+    const experimentLabel = active.experiment_name || experimentSelect.value || "—";
+    const datetimeLabel = active.datetime ? `sim ${active.datetime}` : "sim time unknown";
+    const runPhase = formatRunPhase(row);
+    const filterWarning = row ? "" : " · active task not in current table filter";
+
+    activeBannerTitle.textContent = `Live world: ${active.task_id} · ${experimentLabel}`;
+    activeBannerMeta.textContent = `${datetimeLabel} · ${completedLabel} · ${runPhase}${filterWarning}`;
+    activeBannerInstruction.textContent = active.instruction || "—";
+    activeBannerInstruction.title = active.instruction || "";
+    activePlaygroundLink.href = `/playground?task_id=${encodeURIComponent(active.task_id)}`;
+    activeBanner.classList.remove("hidden");
+}
+
+function updateLastRefreshLabel() {
+    if (!lastRefreshAt) {
+        lastRefreshLabel.textContent = "waiting…";
+        return;
+    }
+    const seconds = Math.max(0, Math.round((Date.now() - lastRefreshAt) / 1000));
+    lastRefreshLabel.textContent = `updated ${seconds}s ago`;
+}
+
+function scrollActiveRowIntoView() {
+    const activeRow = tasksTableBody.querySelector("tr.bg-violet-50");
+    if (activeRow) {
+        activeRow.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+}
+
+function renderTasks(payload) {
+    const tasks = payload.tasks || [];
+    if (tasks.length === 0) {
+        tasksTableBody.innerHTML = `
+            <tr>
+                <td colspan="6" class="px-4 py-8 text-center text-gray-400">No tasks match the current filters.</td>
+            </tr>`;
+        summaryText.textContent = `${payload.experiment_name}: 0 tasks`;
+        return;
+    }
+
+    tasksTableBody.innerHTML = tasks.map((task) => {
+        const passPct = task.pass_percentage != null ? `${task.pass_percentage}%` : "—";
+        const activeCell = task.is_active
+            ? '<span class="text-violet-700 font-semibold"><i class="fas fa-circle text-xs mr-1"></i>live</span>'
+            : "—";
+        const playgroundUrl = `/playground?task_id=${encodeURIComponent(task.task_id)}`;
+        return `
+            <tr class="${task.is_active ? "bg-violet-50" : ""}">
+                <td class="px-4 py-3 font-mono text-xs">${task.task_id}</td>
+                <td class="px-4 py-3">
+                    <span class="${statusBadgeClass(task.status)}">${formatStatusLabel(task.status)}</span>
+                </td>
+                <td class="px-4 py-3">${passPct}</td>
+                <td class="px-4 py-3">${activeCell}</td>
+                <td class="px-4 py-3 instruction-snippet" title="${(task.instruction || "").replace(/"/g, "&quot;")}">
+                    ${truncateInstruction(task.instruction)}
+                </td>
+                <td class="px-4 py-3 whitespace-nowrap space-x-2">
+                    <a href="${playgroundUrl}" class="text-slate-700 hover:text-slate-900 underline text-xs">Open in Playground</a>
+                    <button
+                        class="text-blue-700 hover:text-blue-900 underline text-xs evaluate-btn"
+                        data-task-id="${task.task_id}"
+                    >Re-evaluate</button>
+                </td>
+            </tr>`;
+    }).join("");
+
+    const counts = countByStatus(tasks);
+    summaryText.textContent = `${payload.experiment_name}: ${payload.task_count} task(s) — ${counts.pass} pass, ${counts.fail} fail, ${counts.active + counts.in_progress + counts.finished} running/pending`;
+}
+
+async function loadTaskStatus() {
+    const experiment = experimentSelect.value;
+    if (!experiment) {
+        return;
+    }
+    writeUrlParams();
+    const params = new URLSearchParams();
+    const dataset = datasetInput.value.trim();
+    const taskIds = taskIdsInput.value.trim();
+    if (dataset) {
+        params.set("dataset", dataset);
+    }
+    if (taskIds) {
+        params.set("task_ids", taskIds);
+    }
+    const query = params.toString();
+    const path = `/experiments/${encodeURIComponent(experiment)}/tasks/status${query ? `?${query}` : ""}`;
+    const data = await fetchJson(path);
+    lastTaskPayload = data.output || {};
+    renderTasks(lastTaskPayload);
+    scrollActiveRowIntoView();
+}
+
+async function evaluateTask(taskId) {
+    const experiment = experimentSelect.value;
+    if (!experiment) {
+        return;
+    }
+    const path = `/experiments/${encodeURIComponent(experiment)}/tasks/${encodeURIComponent(taskId)}/evaluate`;
+    const response = await fetch(`${baseUrl()}${path}`, {
+        method: "POST",
+    });
+    if (!response.ok) {
+        const detail = await response.text();
+        throw new Error(`${response.status} ${response.statusText}: ${detail}`);
+    }
+}
+
+async function refreshAll() {
+    refreshSpinner.classList.remove("hidden");
+    refreshIcon.classList.add("hidden");
+    refreshButton.disabled = true;
+    hideError();
+    try {
+        await loadTaskStatus();
+        await loadActiveStatus();
+        lastRefreshAt = Date.now();
+        updateLastRefreshLabel();
+    } catch (error) {
+        showError(error.message || String(error));
+    } finally {
+        refreshSpinner.classList.add("hidden");
+        refreshIcon.classList.remove("hidden");
+        refreshButton.disabled = false;
+    }
+}
+
+function schedulePolling() {
+    if (pollTimer) {
+        clearInterval(pollTimer);
+    }
+    const intervalMs = parseInt(refreshIntervalSelect.value, 10) || 5000;
+    pollTimer = setInterval(refreshAll, intervalMs);
+}
+
+tasksTableBody.addEventListener("click", async (event) => {
+    const button = event.target.closest(".evaluate-btn");
+    if (!button) {
+        return;
+    }
+    const taskId = button.dataset.taskId;
+    button.disabled = true;
+    button.textContent = "Evaluating...";
+    hideError();
+    try {
+        await evaluateTask(taskId);
+        await refreshAll();
+    } catch (error) {
+        showError(`Evaluate ${taskId}: ${error.message || String(error)}`);
+    } finally {
+        button.disabled = false;
+        button.textContent = "Re-evaluate";
+    }
+});
+
+refreshButton.addEventListener("click", refreshAll);
+experimentSelect.addEventListener("change", refreshAll);
+datasetInput.addEventListener("change", refreshAll);
+taskIdsInput.addEventListener("change", refreshAll);
+refreshIntervalSelect.addEventListener("change", schedulePolling);
+setInterval(updateLastRefreshLabel, 1000);
+
+hostInput.value = window.location.origin;
+
+(async function init() {
+    try {
+        await loadExperiments();
+        await refreshAll();
+        schedulePolling();
+    } catch (error) {
+        showError(error.message || String(error));
+    }
+})();
+</script>
+</body>
+</html>
