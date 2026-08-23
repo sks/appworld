@@ -26,6 +26,7 @@ COPY docker/patch_pydantic_apps.py /tmp/patch_pydantic_apps.py
 
 RUN appworld install && \
     python /tmp/patch_pydantic_apps.py && \
+    uv pip install "mcp>=1.19,<2" --system && \
     if appworld download data --help 2>/dev/null | grep -q -- "--mode"; then \
         appworld download data --mode minimal; \
     else \
