@@ -19,10 +19,13 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
+      with:
+        lfs: false
 
-    - name: Set up Git LFS
+    - name: Fetch Git LFS objects from upstream
       run: |
         git lfs install
+        git config lfs.url https://github.com/StonyBrookNLP/appworld.git/info/lfs
         git lfs pull
 
     - uses: astral-sh/setup-uv@v3

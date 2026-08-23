@@ -3,6 +3,13 @@ import os
 import subprocess
 
 
+def default_image_name() -> str:
+    if env_image := os.environ.get("APPWORLD_IMAGE"):
+        return env_image
+    repository = os.environ.get("GITHUB_REPOSITORY", "stonybrooknlp/appworld")
+    return f"ghcr.io/{repository}"
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Build and optionally push Docker multi-arch image(s) to GHCR."
@@ -12,10 +19,25 @@ def main():
     parser.add_argument(
         "--tag",
         default="latest",
-        help="Tag for the Docker image. It can be latest, source or vX.Y.Z (e.g., v0.1.0)",
+        help="Tag for the Docker image. It can be latest, source, stack or vX.Y.Z (e.g., v0.1.0)",
+    )
+    parser.add_argument(
+        "--image",
+        default=default_image_name(),
+        help="Image repository (default: ghcr.io/$GITHUB_REPOSITORY or ghcr.io/stonybrooknlp/appworld)",
+    )
+    parser.add_argument(
+        "--dockerfile",
+        default="dockerfile",
+        help="Dockerfile path relative to repo root (default: dockerfile)",
     )
     parser.add_argument("--push", action="store_true", help="Flag to push the image after building")
     parser.add_argument("--no-cache", action="store_true", help="Flag to build without cache")
+    parser.add_argument(
+        "--platforms",
+        default="linux/amd64,linux/arm64",
+        help="Comma-separated platforms for buildx when --push is set",
+    )
     args = parser.parse_args()
     username = args.username
     password = (
@@ -25,17 +47,20 @@ def main():
     )
     if not password:
         raise ValueError("GitHub personal access token not provided.")
-    image_name = "ghcr.io/stonybrooknlp/appworld"
+    image_name = args.image
     tag = args.tag
-    if tag not in ["latest", "source"] and not tag.startswith("v"):
-        raise ValueError("Tag should be latest, source or start with v.")
-    if tag == "source" and args.push:
+    if tag not in ["latest", "source", "stack"] and not tag.startswith("v"):
+        raise ValueError("Tag should be latest, source, stack or start with v.")
+    is_upstream = image_name == "ghcr.io/stonybrooknlp/appworld"
+    if tag == "source" and args.push and is_upstream:
         raise ValueError("The source tag is for local testing only and is not meant to be pushed.")
     # Login (avoid exposing token via args)
     command = ["docker", "login", "--username", username, "--password", password, "ghcr.io"]
     print(" ".join(command))
-    subprocess.run(command)
+    subprocess.run(command, check=True)
     appworld_version = tag.lstrip("v")
+    if tag == "stack":
+        appworld_version = "source"
     if args.push:
         # With --push, build a multi-arch manifest using buildx
         build_cmd = [
@@ -43,6 +68,8 @@ def main():
             "buildx",
             "build",
             ".",
+            "--file",
+            args.dockerfile,
             "--platform",
             args.platforms,
             "--build-arg",
@@ -58,6 +85,8 @@ def main():
             "docker",
             "build",
             ".",
+            "--file",
+            args.dockerfile,
             "--build-arg",
             f"APPWORLD_VERSION={appworld_version}",
             "-t",

@@ -8,6 +8,10 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+  packages: write
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
@@ -40,7 +44,13 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
       with:
-        lfs: true
+        lfs: false
+
+    - name: Fetch Git LFS objects from upstream
+      run: |
+        git lfs install
+        git config lfs.url https://github.com/StonyBrookNLP/appworld.git/info/lfs
+        git lfs pull
 
     - uses: astral-sh/setup-uv@v6
       with:
@@ -170,3 +180,51 @@ jobs:
       if: ${{ matrix.dependency == 'latest' && matrix.python-version == '3.13' && matrix.os == 'ubuntu-latest' }}
       run: |
         uv run --no-editable generate/data/all.py --small_scale
+
+  publish-stack-image:
+    name: Publish Genie stack image
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          lfs: false
+
+      - name: Fetch Git LFS objects from upstream
+        run: |
+          git lfs install
+          git config lfs.url https://github.com/StonyBrookNLP/appworld.git/info/lfs
+          git lfs pull
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push stack image
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python scripts/build_image.py \
+            --username "${{ github.actor }}" \
+            --password "${GITHUB_TOKEN}" \
+            --image "ghcr.io/${{ github.repository }}" \
+            --dockerfile docker/stack.dockerfile \
+            --tag stack \
+            --push \
+            --platforms linux/amd64
+
+      - name: Tag stack image as latest
+        run: |
+          docker buildx imagetools create \
+            -t "ghcr.io/${{ github.repository }}:latest" \
+            "ghcr.io/${{ github.repository }}:stack"
