@@ -35,7 +35,7 @@ jobs:
     - name: Materialize bundles from plaintext source
       run: |
         uv pip install -e .
-        python scripts/materialize_bundles_for_install.py apps tests tasks data
+        uv run python scripts/materialize_bundles_for_install.py apps tests tasks data
 
     - name: Install Dependencies
       run: |

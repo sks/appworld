@@ -55,7 +55,7 @@ jobs:
         # Git LFS bandwidth is unavailable on sks fork and upstream; pack from source.
         uv venv
         uv pip install -e ".[ci]"
-        python scripts/materialize_bundles_for_install.py apps tests tasks data
+        uv run python scripts/materialize_bundles_for_install.py apps tests tasks data
 
     - name: Enable UTF-8 in Windows console
       if: runner.os == 'Windows'
@@ -204,7 +204,7 @@ jobs:
         run: |
           uv venv
           uv pip install -e ".[mcp]"
-          python scripts/materialize_bundles_for_install.py apps tests
+          uv run python scripts/materialize_bundles_for_install.py apps tests
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
