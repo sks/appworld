@@ -9,10 +9,26 @@ RUN apt-get update && \
     apt-get install -y --no-install-recommends gcc python3-dev build-essential curl git && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
+# Seed real bundles from PyPI, then overlay fork source (git checkout has LFS pointers).
+RUN uv pip install "appworld[mcp]" --system && \
+    python - <<'PY'
+import os, shutil, appworld
+bundle_dir = os.path.join(os.path.dirname(appworld.__file__), ".source")
+shutil.copytree(bundle_dir, "/tmp/appworld-bundles", dirs_exist_ok=True)
+print(f"Saved PyPI bundles from {bundle_dir}")
+PY
+
 RUN --mount=type=bind,source=.,target=/project-root \
     cd /project-root && \
-    uv pip install ".[mcp]" --system && \
-    python scripts/materialize_bundles_for_install.py apps tests
+    uv pip install ".[mcp]" --system --no-deps && \
+    python - <<'PY'
+import os, shutil, appworld
+target = os.path.join(os.path.dirname(appworld.__file__), ".source")
+os.makedirs(target, exist_ok=True)
+for name in os.listdir("/tmp/appworld-bundles"):
+    shutil.copy2(os.path.join("/tmp/appworld-bundles", name), os.path.join(target, name))
+print(f"Restored bundles into {target}")
+PY
 
 RUN appworld install && \
     if appworld download data --help 2>/dev/null | grep -q -- "--mode"; then \

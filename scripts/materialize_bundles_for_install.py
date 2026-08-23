@@ -1,8 +1,8 @@
-"""Pack bundle files from plaintext repo source and copy into the installed package.
+"""Pack or fetch bundle files and copy them into the installed package.
 
-CI and Docker builds use this when Git LFS bandwidth is unavailable (fork or upstream
-budget exceeded). Without materialized bundles, pip installs ship LFS pointer stubs
-and appworld install fails at runtime.
+CI and Docker builds use this when Git LFS bandwidth is unavailable. The git
+checkout only has LFS pointer stubs for bundle files; when plaintext app
+directories are not unpacked, bundles are copied from the PyPI wheel instead.
 """
 
 from __future__ import annotations
@@ -10,12 +10,15 @@ from __future__ import annotations
 import importlib.util
 import os
 import shutil
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import appworld
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+PYPI_APPWORLD_SPEC = os.environ.get("APPWORLD_PYPI_SPEC", "appworld[mcp]")
 
 
 def pack_source_bundles(bundle_names: list[str] | None = None) -> None:
@@ -29,15 +32,39 @@ def pack_source_bundles(bundle_names: list[str] | None = None) -> None:
     module.pack_source_bundles(bundle_names=bundle_names)
 
 
+def copy_bundles_from_pypi(bundle_names: list[str]) -> None:
+    with tempfile.TemporaryDirectory() as temporary_directory:
+        subprocess.run(
+            ["uv", "pip", "install", f"--target={temporary_directory}", PYPI_APPWORLD_SPEC],
+            check=True,
+        )
+        for bundle_name in bundle_names:
+            source = Path(temporary_directory) / "appworld" / ".source" / f"{bundle_name}.bundle"
+            if not source.exists():
+                raise FileNotFoundError(f"PyPI package missing bundle: {source}")
+            if bundle_name in ("apps", "tests"):
+                destination = REPO_ROOT / "src" / "appworld" / ".source" / f"{bundle_name}.bundle"
+            else:
+                destination = REPO_ROOT / "generate" / ".source" / f"{bundle_name}.bundle"
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, destination)
+            print(f"Copied PyPI bundle {source} -> {destination}")
+
+
 def materialize_bundles(bundle_names: list[str] | None = None) -> None:
     if bundle_names is None:
         bundle_names = ["apps", "tests"]
     previous_cwd = Path.cwd()
     os.chdir(REPO_ROOT)
     try:
-        pack_source_bundles(bundle_names=bundle_names)
+        try:
+            pack_source_bundles(bundle_names=bundle_names)
+        except (FileNotFoundError, OSError) as error:
+            print(f"pack_source_bundles failed ({error}); falling back to PyPI bundles")
+            copy_bundles_from_pypi(bundle_names=bundle_names)
     finally:
         os.chdir(previous_cwd)
+
     package_root = os.path.dirname(appworld.__file__)
     package_source = os.path.join(package_root, ".source")
     os.makedirs(package_source, exist_ok=True)
