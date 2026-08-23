@@ -22,8 +22,10 @@ RUN --mount=type=bind,source=.,target=/project-root \
     cd /project-root && uv pip install ".[mcp]" --system && \
     cp -a /tmp/appworld-bundles/. "$(python -c 'import appworld, os; print(os.path.join(os.path.dirname(appworld.__file__), ".source"))')/"
 
+COPY docker/patch_pydantic_apps.py /tmp/patch_pydantic_apps.py
+
 RUN appworld install && \
-    python docker/patch_pydantic_apps.py && \
+    python /tmp/patch_pydantic_apps.py && \
     if appworld download data --help 2>/dev/null | grep -q -- "--mode"; then \
         appworld download data --mode minimal; \
     else \
