@@ -576,9 +576,8 @@ def _prepare_api_docs_function_calling_mcp_or_smolagents(
                 property_value.pop("title", None)
                 if property_name not in required_property_names and "default" not in property_value:
                     property_value["default"] = None
-                assert ("default" in property_value) == (
-                    property_name not in required_property_names
-                )
+                if property_name in required_property_names and "default" in property_value:
+                    property_value.pop("default", None)
                 schema_properties[property_name] = property_value
             schema_properties = {
                 key: maybe_fix_types_in_parameter_info(dict(value))

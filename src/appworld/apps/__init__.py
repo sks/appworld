@@ -478,6 +478,8 @@ def build_main_app(app_names: list[str] | None = None) -> FastAPI:
 
 
 def __getattr__(attribute_name: str) -> object:
+    if attribute_name == "APP_TO_DESCRIPTION":
+        return get_app_to_description()
     if attribute_name in APP_NAMES:
         try:
             module = importlib.import_module("." + attribute_name, __name__)
