@@ -14,6 +14,8 @@
 !experiments/setup.py
 !experiments/__init__.py
 !scripts/
+!docker/
+!docker/**
 !tests/
 !tests/**
 !poetry.lock
