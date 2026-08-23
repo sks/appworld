@@ -9,6 +9,8 @@ MCP_PORT="${APPWORLD_MCP_PORT:-10000}"
 
 cd "${ROOT}"
 
+python /usr/local/bin/patch_pydantic_apps.py
+
 if appworld serve multiple --help 2>/dev/null | grep -q -- '--environment'; then
   exec appworld serve multiple \
     --environment '' \

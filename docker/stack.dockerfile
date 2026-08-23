@@ -23,6 +23,7 @@ RUN --mount=type=bind,source=.,target=/project-root \
     cp -a /tmp/appworld-bundles/. "$(python -c 'import appworld, os; print(os.path.join(os.path.dirname(appworld.__file__), ".source"))')/"
 
 RUN appworld install && \
+    python docker/patch_pydantic_apps.py && \
     if appworld download data --help 2>/dev/null | grep -q -- "--mode"; then \
         appworld download data --mode minimal; \
     else \
@@ -30,6 +31,7 @@ RUN appworld install && \
     fi
 
 COPY docker/stack-entrypoint.sh /usr/local/bin/stack-entrypoint.sh
+COPY docker/patch_pydantic_apps.py /usr/local/bin/patch_pydantic_apps.py
 RUN chmod +x /usr/local/bin/stack-entrypoint.sh
 
 ENV APPWORLD_ROOT=/run
