@@ -183,7 +183,7 @@ jobs:
         uv run --no-editable generate/data/all.py --small_scale
 
   publish-stack-image:
-    name: Publish Genie stack image
+    name: Publish stack image
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:

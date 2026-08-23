@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Start env + apis + MCP HTTP for Genie and other MCP clients.
+# Start environment + apis + MCP HTTP for agent harness evaluation.
 set -euo pipefail
 
 ROOT="${APPWORLD_ROOT:-/run}"
@@ -8,8 +8,6 @@ APIS_PORT="${APPWORLD_APIS_PORT:-9000}"
 MCP_PORT="${APPWORLD_MCP_PORT:-10000}"
 
 cd "${ROOT}"
-
-python /usr/local/bin/patch_pydantic_apps.py
 
 if appworld serve multiple --help 2>/dev/null | grep -q -- '--environment'; then
   exec appworld serve multiple \

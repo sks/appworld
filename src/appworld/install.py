@@ -4,6 +4,7 @@ import appworld
 from appworld.common.constants import PASSWORD, SALT
 from appworld.common.crypto import unpack_bundle
 from appworld.common.path_store import path_store
+from appworld.install_finalize import finalize_package_install, finalize_repo_install
 
 
 def install_repo() -> None:
@@ -71,6 +72,7 @@ def install_repo() -> None:
         f"  - from: {data_generation_bundle_file_path}\n"
         f"  - in  : {base_directory}"
     )
+    finalize_repo_install()
 
 
 def install_package() -> None:
@@ -105,3 +107,4 @@ def install_package() -> None:
         f"  - from: {tests_bundle_file_path}\n"
         f"  - in  : {tests_base_directory}"
     )
+    finalize_package_install(apps_base_directory)
