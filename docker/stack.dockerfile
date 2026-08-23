@@ -10,7 +10,9 @@ RUN apt-get update && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 RUN --mount=type=bind,source=.,target=/project-root \
-    cd /project-root && uv pip install ".[mcp]" --system
+    cd /project-root && \
+    uv pip install ".[mcp]" --system && \
+    python scripts/materialize_bundles_for_install.py apps tests
 
 RUN appworld install && \
     if appworld download data --help 2>/dev/null | grep -q -- "--mode"; then \

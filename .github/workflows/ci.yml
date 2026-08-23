@@ -46,15 +46,16 @@ jobs:
       with:
         lfs: false
 
-    - name: Fetch Git LFS objects from upstream
-      run: |
-        git lfs install
-        git config lfs.url https://github.com/StonyBrookNLP/appworld.git/info/lfs
-        git lfs pull
-
     - uses: astral-sh/setup-uv@v6
       with:
         version: "0.7.3"
+
+    - name: Materialize bundles from plaintext source
+      run: |
+        # Git LFS bandwidth is unavailable on sks fork and upstream; pack from source.
+        uv venv
+        uv pip install -e ".[ci]"
+        python scripts/materialize_bundles_for_install.py apps tests tasks data
 
     - name: Enable UTF-8 in Windows console
       if: runner.os == 'Windows'
@@ -194,11 +195,16 @@ jobs:
         with:
           lfs: false
 
-      - name: Fetch Git LFS objects from upstream
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.7.3"
+
+      - name: Materialize bundles from plaintext source
         run: |
-          git lfs install
-          git config lfs.url https://github.com/StonyBrookNLP/appworld.git/info/lfs
-          git lfs pull
+          uv venv
+          uv pip install -e ".[mcp]"
+          python scripts/materialize_bundles_for_install.py apps tests
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
