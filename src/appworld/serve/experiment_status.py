@@ -8,6 +8,8 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from typing import Any
 
+from urllib.parse import urlparse
+
 from appworld.common.path_store import path_store
 from appworld.environment import AppWorld
 from appworld.task import Task, load_task_ids
@@ -30,6 +32,7 @@ class TaskStatusRow:
     evaluated_at: str | None
     has_output: bool
     agent_finished: bool
+    progress: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -75,6 +78,7 @@ class ExperimentStatus:
         task_ids: list[str] | None = None,
         dataset: str | None = None,
         active_task_id: str | None = None,
+        world: AppWorld | None = None,
     ) -> dict[str, Any]:
         cache_key = f"{experiment_name}|{task_ids}|{dataset}|{active_task_id}"
         cached = _status_cache.get(cache_key)
@@ -88,6 +92,7 @@ class ExperimentStatus:
                 experiment_name,
                 task_id,
                 is_active=active_task_id is not None and task_id == active_task_id,
+                world=world,
             )
             for task_id in ids
         ]
@@ -109,12 +114,18 @@ class ExperimentStatus:
             completed = world.task_completed()
         except Exception:
             completed = False
+        progress = self._task_progress(
+            world.experiment_name,
+            task.id,
+            world=world,
+        )
         return {
             "task_id": task.id,
             "instruction": task.instruction,
             "datetime": task.datetime,
             "task_completed": completed,
             "experiment_name": world.experiment_name,
+            "progress": progress,
         }
 
     def _tasks_root(self, experiment_name: str) -> str:
@@ -129,6 +140,7 @@ class ExperimentStatus:
         task_id: str,
         *,
         is_active: bool,
+        world: AppWorld | None = None,
     ) -> TaskStatusRow:
         task_dir = self._task_dir(experiment_name, task_id)
         has_output = os.path.isdir(task_dir)
@@ -137,6 +149,8 @@ class ExperimentStatus:
         report_path = os.path.join(task_dir, "evaluation", "report.md")
         eval_stats = self._parse_evaluation_report(report_path)
         instruction = self._load_instruction(task_id)
+        live_world = world if is_active and world is not None and world.task_id == task_id else None
+        progress = self._task_progress(experiment_name, task_id, world=live_world)
 
         status = "not_started"
         if is_active:
@@ -161,6 +175,7 @@ class ExperimentStatus:
             evaluated_at=eval_stats.get("evaluated_at") if eval_stats else None,
             has_output=has_output,
             agent_finished=agent_finished,
+            progress=progress,
         )
 
     def _load_instruction(self, task_id: str) -> str | None:
@@ -200,6 +215,101 @@ class ExperimentStatus:
             return None
         return int(match.group(1))
 
+    def _task_progress(
+        self,
+        experiment_name: str,
+        task_id: str,
+        *,
+        world: AppWorld | None = None,
+    ) -> dict[str, Any] | None:
+        task_dir = self._task_dir(experiment_name, task_id)
+        requests: list[dict[str, Any]] = []
+        source = "disk"
+        if world is not None and world.task_id == task_id:
+            requests = [
+                {"method": request["method"], "url": request["url"], "data": request.get("data", {})}
+                for request in world.requester.request_tracker.requests
+            ]
+            source = "live"
+        else:
+            log_path = os.path.join(task_dir, "logs", "api_calls.jsonl")
+            if os.path.isfile(log_path):
+                requests = AppWorld.parse_api_calls_log(
+                    experiment_name=experiment_name,
+                    task_id=task_id,
+                )
+
+        if not requests and not os.path.isdir(task_dir):
+            return None
+
+        last_api_calls = self._summarize_api_calls(requests)
+        apps_touched = sorted(
+            {
+                call["app"]
+                for call in last_api_calls
+                if call.get("app")
+            }
+        )
+        current_step = last_api_calls[-1]["label"] if last_api_calls else None
+        interaction_count = self._count_environment_interactions(task_dir)
+        last_activity_at = self._last_activity_timestamp(task_dir)
+
+        return {
+            "source": source,
+            "api_call_count": len(requests),
+            "interaction_count": interaction_count,
+            "current_step": current_step,
+            "last_api_calls": last_api_calls[-10:],
+            "apps_touched": apps_touched,
+            "last_activity_at": last_activity_at,
+        }
+
+    def _summarize_api_calls(self, requests: list[dict[str, Any]]) -> list[dict[str, str]]:
+        summarized: list[dict[str, str]] = []
+        for request in requests:
+            method = str(request.get("method", "get")).upper()
+            url = str(request.get("url", ""))
+            app, api = self._parse_api_url(url)
+            label = f"{method} {app}.{api}" if api else f"{method} {app}"
+            summarized.append({"method": method, "url": url, "app": app, "api": api, "label": label})
+        return summarized
+
+    def _parse_api_url(self, url: str) -> tuple[str, str]:
+        path = url
+        if "://" in url:
+            path = urlparse(url).path
+        parts = [part for part in path.strip("/").split("/") if part]
+        if not parts:
+            return "unknown", ""
+        app_name = parts[0].replace("-", "_")
+        api_name = parts[1] if len(parts) > 1 else ""
+        return app_name, api_name
+
+    def _count_environment_interactions(self, task_dir: str) -> int | None:
+        io_path = os.path.join(task_dir, "logs", "environment_io.md")
+        if not os.path.isfile(io_path):
+            return None
+        with open(io_path, encoding="utf-8") as handle:
+            content = handle.read()
+        pattern = re.compile(r"^#+ (Execution|Environment Interaction) ", re.MULTILINE)
+        return len(pattern.findall(content))
+
+    def _last_activity_timestamp(self, task_dir: str) -> str | None:
+        logs_dir = os.path.join(task_dir, "logs")
+        if not os.path.isdir(logs_dir):
+            return None
+        latest_mtime: float | None = None
+        for name in os.listdir(logs_dir):
+            file_path = os.path.join(logs_dir, name)
+            if not os.path.isfile(file_path):
+                continue
+            mtime = os.path.getmtime(file_path)
+            if latest_mtime is None or mtime > latest_mtime:
+                latest_mtime = mtime
+        if latest_mtime is None:
+            return None
+        return datetime.fromtimestamp(latest_mtime, tz=timezone.utc).isoformat()
+
 
 def list_experiments() -> list[str]:
     return ExperimentStatus().list_experiments()
@@ -211,12 +321,14 @@ def task_status_for_experiment(
     task_ids: list[str] | None = None,
     dataset: str | None = None,
     active_task_id: str | None = None,
+    world: AppWorld | None = None,
 ) -> dict[str, Any]:
     return ExperimentStatus().task_status_for_experiment(
         experiment_name,
         task_ids=task_ids,
         dataset=dataset,
         active_task_id=active_task_id,
+        world=world,
     )
 
 

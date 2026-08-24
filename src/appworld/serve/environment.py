@@ -324,6 +324,7 @@ async def show_experiment_task_status(
         task_ids=parsed_task_ids,
         dataset=dataset,
         active_task_id=active_task_id,
+        world=world,
     )
     return {"output": output}
 

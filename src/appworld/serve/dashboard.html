@@ -111,6 +111,34 @@
             </button>
         </div>
 
+        <div id="current-run-panel" class="hidden mb-4 bg-white rounded-lg shadow-md border-2 border-violet-300 overflow-hidden">
+            <div class="bg-violet-50 px-4 py-2 border-b border-violet-200 flex items-center justify-between">
+                <h2 class="text-sm font-semibold text-violet-900 uppercase tracking-wide">Current run</h2>
+                <span id="current-run-source" class="text-xs text-violet-700 font-medium"></span>
+            </div>
+            <div class="p-4">
+                <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+                    <div class="min-w-0 flex-1">
+                        <p id="current-run-task" class="font-mono text-base font-semibold text-slate-900"></p>
+                        <p id="current-run-instruction" class="text-sm text-slate-600 mt-1"></p>
+                        <p id="current-run-where" class="text-sm font-medium text-violet-800 mt-3"></p>
+                    </div>
+                    <div class="shrink-0 text-sm text-slate-600 space-y-1">
+                        <p id="current-run-stats"></p>
+                        <p id="current-run-apps"></p>
+                    </div>
+                </div>
+                <div class="mt-4">
+                    <p class="text-xs font-semibold text-slate-500 uppercase mb-2">Recent steps</p>
+                    <ol id="current-run-steps" class="space-y-1 max-h-40 overflow-y-auto text-xs font-mono"></ol>
+                </div>
+            </div>
+        </div>
+
+        <div id="idle-run-panel" class="hidden mb-4 bg-gray-50 rounded-lg border border-dashed border-gray-300 p-4 text-center text-sm text-gray-500">
+            No task is live on this server. Initialize a world via the harness or playground to see live progress here.
+        </div>
+
         <div class="bg-white rounded-lg shadow-md border border-gray-200 overflow-x-auto">
             <table class="min-w-full divide-y divide-gray-200 text-sm">
                 <thead class="bg-gray-50">
@@ -119,13 +147,14 @@
                         <th class="px-4 py-3 text-left font-semibold text-gray-700">Status</th>
                         <th class="px-4 py-3 text-left font-semibold text-gray-700">Pass %</th>
                         <th class="px-4 py-3 text-left font-semibold text-gray-700">Active</th>
+                        <th class="px-4 py-3 text-left font-semibold text-gray-700">Progress</th>
                         <th class="px-4 py-3 text-left font-semibold text-gray-700">Instruction</th>
                         <th class="px-4 py-3 text-left font-semibold text-gray-700">Actions</th>
                     </tr>
                 </thead>
                 <tbody id="tasks-table-body" class="divide-y divide-gray-100">
                     <tr>
-                        <td colspan="6" class="px-4 py-8 text-center text-gray-400">No data yet.</td>
+                        <td colspan="7" class="px-4 py-8 text-center text-gray-400">No data yet.</td>
                     </tr>
                 </tbody>
             </table>
@@ -151,6 +180,15 @@ const activeBannerInstruction = document.getElementById("active-banner-instructi
 const activePlaygroundLink = document.getElementById("active-playground-link");
 const lastRefreshLabel = document.getElementById("last-refresh-label");
 const taskIdsInput = document.getElementById("task-ids-input");
+const currentRunPanel = document.getElementById("current-run-panel");
+const idleRunPanel = document.getElementById("idle-run-panel");
+const currentRunSource = document.getElementById("current-run-source");
+const currentRunTask = document.getElementById("current-run-task");
+const currentRunInstruction = document.getElementById("current-run-instruction");
+const currentRunWhere = document.getElementById("current-run-where");
+const currentRunStats = document.getElementById("current-run-stats");
+const currentRunApps = document.getElementById("current-run-apps");
+const currentRunSteps = document.getElementById("current-run-steps");
 
 let pollTimer = null;
 let lastRefreshAt = null;
@@ -253,6 +291,80 @@ async function loadExperiments() {
     }
 }
 
+function formatProgressCell(progress) {
+    if (!progress) {
+        return "—";
+    }
+    const step = progress.current_step || "no API calls yet";
+    return `<span class="block text-xs font-mono text-slate-700">${progress.api_call_count} calls</span><span class="block text-xs text-violet-700 truncate max-w-xs" title="${step.replace(/"/g, "&quot;")}">${step}</span>`;
+}
+
+function pickCurrentRunTask(active, tasks) {
+    if (active) {
+        const activeRow = tasks.find((task) => task.task_id === active.task_id);
+        return {
+            taskId: active.task_id,
+            instruction: active.instruction || activeRow?.instruction || "",
+            progress: active.progress || activeRow?.progress || null,
+            isLive: true,
+        };
+    }
+    const running = tasks
+        .filter((task) => task.status === "in_progress" || task.status === "active" || task.status === "finished")
+        .filter((task) => task.progress && task.progress.api_call_count > 0);
+    if (running.length === 0) {
+        return null;
+    }
+    running.sort((left, right) => {
+        const leftTime = left.progress?.last_activity_at || "";
+        const rightTime = right.progress?.last_activity_at || "";
+        return rightTime.localeCompare(leftTime);
+    });
+    const task = running[0];
+    return {
+        taskId: task.task_id,
+        instruction: task.instruction || "",
+        progress: task.progress,
+        isLive: task.is_active,
+    };
+}
+
+function renderCurrentRun(active, payload) {
+    const tasks = payload?.tasks || [];
+    const current = pickCurrentRunTask(active, tasks);
+    if (!current) {
+        currentRunPanel.classList.add("hidden");
+        idleRunPanel.classList.remove("hidden");
+        return;
+    }
+    idleRunPanel.classList.add("hidden");
+    currentRunPanel.classList.remove("hidden");
+    const progress = current.progress;
+    currentRunTask.textContent = current.taskId;
+    currentRunInstruction.textContent = current.instruction || "—";
+    currentRunSource.textContent = current.isLive ? "live in-memory" : "from saved logs";
+    if (!progress || !progress.current_step) {
+        currentRunWhere.textContent = "Where it is: waiting for first API call";
+    } else {
+        currentRunWhere.textContent = `Where it is now: ${progress.current_step}`;
+    }
+    const interactions = progress?.interaction_count != null ? `${progress.interaction_count} code runs` : "code runs unknown";
+    currentRunStats.textContent = `${progress?.api_call_count || 0} API calls · ${interactions}`;
+    const apps = progress?.apps_touched?.length ? progress.apps_touched.join(", ") : "none yet";
+    currentRunApps.textContent = `Apps touched: ${apps}`;
+    const steps = progress?.last_api_calls || [];
+    if (steps.length === 0) {
+        currentRunSteps.innerHTML = `<li class="text-gray-400">No API steps recorded yet.</li>`;
+        return;
+    }
+    currentRunSteps.innerHTML = steps.map((step, index) => {
+        const isCurrent = index === steps.length - 1;
+        const marker = isCurrent ? "▶" : "·";
+        const style = isCurrent ? "text-violet-800 font-semibold bg-violet-50 rounded px-2 py-1" : "text-slate-600 px-2 py-1";
+        return `<li class="${style}">${marker} ${step.label}</li>`;
+    }).join("");
+}
+
 function formatRunPhase(row) {
     if (!row) {
         return "initialized (in memory)";
@@ -312,10 +424,11 @@ async function loadActiveStatus() {
     const experimentLabel = active.experiment_name || experimentSelect.value || "—";
     const datetimeLabel = active.datetime ? `sim ${active.datetime}` : "sim time unknown";
     const runPhase = formatRunPhase(row);
+    const whereLabel = active.progress?.current_step || row?.progress?.current_step;
     const filterWarning = row ? "" : " · active task not in current table filter";
 
     activeBannerTitle.textContent = `Live world: ${active.task_id} · ${experimentLabel}`;
-    activeBannerMeta.textContent = `${datetimeLabel} · ${completedLabel} · ${runPhase}${filterWarning}`;
+    activeBannerMeta.textContent = `${datetimeLabel} · ${completedLabel} · ${runPhase}${whereLabel ? ` · ${whereLabel}` : ""}${filterWarning}`;
     activeBannerInstruction.textContent = active.instruction || "—";
     activeBannerInstruction.title = active.instruction || "";
     activePlaygroundLink.href = `/playground?task_id=${encodeURIComponent(active.task_id)}`;
@@ -343,7 +456,7 @@ function renderTasks(payload) {
     if (tasks.length === 0) {
         tasksTableBody.innerHTML = `
             <tr>
-                <td colspan="6" class="px-4 py-8 text-center text-gray-400">No tasks match the current filters.</td>
+                <td colspan="7" class="px-4 py-8 text-center text-gray-400">No tasks match the current filters.</td>
             </tr>`;
         summaryText.textContent = `${payload.experiment_name}: 0 tasks`;
         return;
@@ -363,6 +476,7 @@ function renderTasks(payload) {
                 </td>
                 <td class="px-4 py-3">${passPct}</td>
                 <td class="px-4 py-3">${activeCell}</td>
+                <td class="px-4 py-3">${formatProgressCell(task.progress)}</td>
                 <td class="px-4 py-3 instruction-snippet" title="${(task.instruction || "").replace(/"/g, "&quot;")}">
                     ${truncateInstruction(task.instruction)}
                 </td>
@@ -426,6 +540,7 @@ async function refreshAll() {
     try {
         await loadTaskStatus();
         await loadActiveStatus();
+        renderCurrentRun(lastActiveWorld, lastTaskPayload);
         lastRefreshAt = Date.now();
         updateLastRefreshLabel();
     } catch (error) {

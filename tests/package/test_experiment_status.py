@@ -119,8 +119,24 @@ class TestExperimentStatus:
         assert first is second
         assert first["task_count"] == 1
 
+    def test_task_progress_from_api_calls_log(self, experiment_root, experiment_status) -> None:
+        task_dir = experiment_root / "test_exp" / "tasks" / "task_prog"
+        logs_dir = task_dir / "logs"
+        logs_dir.mkdir(parents=True)
+        api_log = logs_dir / "api_calls.jsonl"
+        api_log.write_text(
+            '{"method": "get", "url": "/phone/messages", "data": {}}\n'
+            '{"method": "post", "url": "/simple_note/notes", "data": {}}\n',
+            encoding="utf-8",
+        )
 
-class TestExperimentStatusAPI:
+        progress = experiment_status._task_progress("test_exp", "task_prog")
+
+        assert progress is not None
+        assert progress["api_call_count"] == 2
+        assert progress["current_step"] == "POST simple_note.notes"
+        assert progress["apps_touched"] == ["phone", "simple_note"]
+        assert len(progress["last_api_calls"]) == 2
     @pytest.fixture
     def client(self):
         return TestClient(environment.app)
