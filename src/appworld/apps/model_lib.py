@@ -488,10 +488,12 @@ class SQLModel(Registrable, _SQLModel):
                 singularize(next(iter(column.foreign_keys)).target_fullname.removesuffix(".id"))
                 + "_id"
             )
-            actual_foreign_key_id = cls.schema()["properties"][field_name].get(
-                "reference_name", field_name
-            )
+            actual_foreign_key_id = cls.field_reference_name(field_name)
             if found_foreign_key_id != actual_foreign_key_id:
+                role_name = field_name.removesuffix("_id")
+                relationship_names = getattr(cls, "has_one", ()) + getattr(cls, "has_many", ())
+                if role_name in relationship_names:
+                    continue
                 raise ValueError(
                     f"In {class_name}, field name {field_name} does not match "
                     f"foreign key id {actual_foreign_key_id}"
@@ -585,8 +587,8 @@ class SQLModel(Registrable, _SQLModel):
         klass = self.__class__
 
         def exists(cls_: type[SQLModel], id_: int) -> bool:
-            exists_statement = select([1]).where(cls_.id == id_).exists()
-            return session.execute(select([exists_statement])).scalar()
+            exists_statement = select(1).where(cls_.id == id_).exists()
+            return session.execute(select(exists_statement)).scalar()
 
         for property_name in self.properties(required=True):
             property_value = getter_plus(self, property_name)
@@ -765,8 +767,8 @@ class SQLModel(Registrable, _SQLModel):
     @classmethod
     def _exists(cls, id: int) -> bool:
         with Session(cls.db.engine) as session:
-            exists_statement = select([1]).where(cls.id == id).exists()
-            result = session.execute(select([exists_statement])).scalar()
+            exists_statement = select(1).where(cls.id == id).exists()
+            result = session.execute(select(exists_statement)).scalar()
             return result
 
     @classmethod
@@ -1443,14 +1445,36 @@ class SQLModel(Registrable, _SQLModel):
         self.increment_model_hash()
 
     @classmethod
+    def field_reference_name(cls, field_name: str) -> str:
+        # Resolve the canonical foreign-key field name (e.g. sender_id -> user_id).
+        field_info = getattr(cls, "model_fields", {}).get(field_name)
+        if field_info is not None:
+            schema_extra = getattr(field_info, "json_schema_extra", None)
+            if isinstance(schema_extra, dict) and "reference_name" in schema_extra:
+                return str(schema_extra["reference_name"])
+        props = cls.schema()["properties"].get(field_name, {})
+        if "reference_name" in props:
+            return str(props["reference_name"])
+        role_name = field_name.removesuffix("_id")
+        relationship_names = getattr(cls, "has_one", ()) + getattr(cls, "has_many", ())
+        if role_name in relationship_names and cls.is_table_model():
+            for column in cls.__table__.columns:
+                if column.name != field_name or not column.foreign_keys:
+                    continue
+                target_table = next(iter(column.foreign_keys)).target_fullname.removesuffix(".id")
+                return singularize(target_table) + "_id"
+        return field_name
+
+    @classmethod
     @cache
     def field_mapping(cls) -> dict[str, str]:
         # mapping of field name (that is an ID) to its table-mappable version. E.g., debtor_id -> user_id.
         # once I move to SQLModel's relationship, this will not be needed.
         return {
-            field_name: field_info["reference_name"]
-            for field_name, field_info in cls.schema()["properties"].items()
-            if "reference_name" in field_info
+            field_name: cls.field_reference_name(field_name)
+            for field_name in cls.schema()["properties"]
+            if field_name.endswith("_id")
+            and cls.field_reference_name(field_name) != field_name
         }
 
     def map_all(self, table_name: str) -> list[Self]:

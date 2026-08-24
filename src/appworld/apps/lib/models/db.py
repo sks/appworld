@@ -167,45 +167,7 @@ class Database:
             raise ValueError(f"save_type must be full or changes. Found: {save_type}")
 
 
-class ModelHashHandler:
-    data: ClassVar[dict[str, dict[str, dict[str, int]]]] = defaultdict(lambda: defaultdict(Counter))
-
-    @classmethod
-    def reset(cls, db_home_path: str | None = None, app_name: str | None = None) -> None:
-        if db_home_path is not None and app_name is not None:
-            cls.data[db_home_path][app_name] = Counter()
-        elif db_home_path is not None:
-            cls.data[db_home_path] = defaultdict(Counter)
-        else:
-            cls.data = defaultdict(lambda: defaultdict(Counter))
-
-    @classmethod
-    def load(cls, from_db_home_path: str | None = None, to_db_home_path: str | None = None) -> None:
-        if from_db_home_path is None and to_db_home_path is None:
-            raise ValueError("At least one of from_db_home_path or to_db_home_path must be passed.")
-        if from_db_home_path is None or to_db_home_path is None:
-            from_db_home_path = to_db_home_path = from_db_home_path or to_db_home_path
-        assert from_db_home_path is not None  # mypy
-        assert to_db_home_path is not None  # mypy
-        model_hashes_file_path = os.path.join(from_db_home_path, "model_hashes.json")
-        cls.reset(to_db_home_path)
-        if not os.path.exists(model_hashes_file_path):
-            return
-        for app_name, model_name_to_hash in read_json(model_hashes_file_path).items():
-            for model_name, hash_ in model_name_to_hash.items():
-                cls.data[to_db_home_path][app_name][model_name] = hash_
-
-    @classmethod
-    def save(cls, from_db_home_path: str | None = None, to_db_home_path: str | None = None) -> None:
-        if from_db_home_path is None and to_db_home_path is None:
-            raise ValueError("At least one of from_db_home_path or to_db_home_path must be passed.")
-        if from_db_home_path is None or to_db_home_path is None:
-            from_db_home_path = to_db_home_path = from_db_home_path or to_db_home_path
-        assert from_db_home_path is not None  # mypy
-        assert to_db_home_path is not None  # mypy
-        model_hashes_file_path = os.path.join(to_db_home_path, "model_hashes.json")
-        model_hashes = cls.data[from_db_home_path]
-        write_json(model_hashes, model_hashes_file_path, silent=True)
+from appworld.apps.model_lib import ModelHashHandler  # shared with app SQLModels; single source of truth
 
 
 class CachedDBHandler:
