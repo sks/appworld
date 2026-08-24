@@ -29,6 +29,14 @@ RUN appworld install && \
         appworld download data; \
     fi
 
+# PyPI apps.bundle omits album_title on Song humanize; FastAPI then 500s show_song.
+# Tracked patch (apps/*.py are gitignored / encrypted) so :stack stays agent-usable.
+COPY docker/patches/patch_spotify_album_title.py /tmp/patch_spotify_album_title.py
+COPY docker/patches/patch_model_lib_reference_name.py /tmp/patch_model_lib_reference_name.py
+RUN python /tmp/patch_spotify_album_title.py && \
+    python /tmp/patch_model_lib_reference_name.py && \
+    rm /tmp/patch_spotify_album_title.py /tmp/patch_model_lib_reference_name.py
+
 COPY docker/stack-entrypoint.sh /usr/local/bin/stack-entrypoint.sh
 RUN chmod +x /usr/local/bin/stack-entrypoint.sh
 

@@ -1452,6 +1452,17 @@ class SQLModel(Registrable, _SQLModel):
             schema_extra = getattr(field_info, "json_schema_extra", None)
             if isinstance(schema_extra, dict) and "reference_name" in schema_extra:
                 return str(schema_extra["reference_name"])
+            # SQLModel may stash extras on sa_column.info (see Field() below).
+            sa_column = getattr(field_info, "sa_column", None)
+            if sa_column is None:
+                for meta in getattr(field_info, "metadata", ()) or ():
+                    cand = getattr(meta, "sa_column", None)
+                    if cand is not None:
+                        sa_column = cand
+                        break
+            if sa_column is not None and isinstance(getattr(sa_column, "info", None), dict):
+                if "reference_name" in sa_column.info:
+                    return str(sa_column.info["reference_name"])
         props = cls.schema()["properties"].get(field_name, {})
         if "reference_name" in props:
             return str(props["reference_name"])
@@ -1470,10 +1481,12 @@ class SQLModel(Registrable, _SQLModel):
     def field_mapping(cls) -> dict[str, str]:
         # mapping of field name (that is an ID) to its table-mappable version. E.g., debtor_id -> user_id.
         # once I move to SQLModel's relationship, this will not be needed.
+        # Include both *_id and *_ids (JSON FK lists like MusicPlayer.queue_song_ids).
+        # Note: str.endswith("_id") is False for names ending in "_ids".
         return {
             field_name: cls.field_reference_name(field_name)
             for field_name in cls.schema()["properties"]
-            if field_name.endswith("_id")
+            if field_name.endswith(("_id", "_ids"))
             and cls.field_reference_name(field_name) != field_name
         }
 
@@ -2479,12 +2492,20 @@ def Field(  # noqa: N802
     if json:
         kwargs["sa_column"] = Column(JSON)
     schema_extra = kwargs.get("schema_extra", {})
+    if not isinstance(schema_extra, dict):
+        schema_extra = {}
     if round_to is not None:
         schema_extra["round_to"] = round_to
         kwargs["schema_extra"] = schema_extra
     if reference_name is not None:
         schema_extra["reference_name"] = reference_name
         kwargs["schema_extra"] = schema_extra
+        # Pydantic v2 / SQLModel Field drops schema_extra from FieldInfo; keep
+        # reference_name on the SA column so field_reference_name can resolve
+        # JSON FK lists (e.g. MusicPlayer.queue_song_ids -> song_ids).
+        sa_column = kwargs.get("sa_column")
+        if sa_column is not None:
+            sa_column.info["reference_name"] = reference_name
     if "foreign_key" in kwargs:
         # Our table names are plural, but the foreign references them in singular,
         # because otherwise, it looks odd: e.g., users.id instead of user.id.
