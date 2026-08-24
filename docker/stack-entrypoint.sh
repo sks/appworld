@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Start environment + apis + MCP HTTP for agent harness evaluation.
+# APIs always use --on-disk so /initialize and /evaluate see the same DB state
+# (in-memory API DBs shadow task output and make evaluate lie).
 set -euo pipefail
 
 ROOT="${APPWORLD_ROOT:-/run}"
@@ -12,14 +14,14 @@ cd "${ROOT}"
 if appworld serve multiple --help 2>/dev/null | grep -q -- '--environment'; then
   exec appworld serve multiple \
     --environment '' \
-    --apis '' \
+    --apis '--on-disk' \
     --mcp "http --port ${MCP_PORT}" \
     --root "${ROOT}"
 fi
 
 echo "appworld serve multiple unavailable; starting env+apis+mcp separately" >&2
 
-appworld serve apis --no-show-usage --port "${APIS_PORT}" --root "${ROOT}" &
+appworld serve apis --no-show-usage --on-disk --port "${APIS_PORT}" --root "${ROOT}" &
 apis_pid=$!
 sleep 3
 appworld serve environment --no-show-usage --port "${ENV_PORT}" --root "${ROOT}" &

@@ -7,6 +7,7 @@ on:
   pull_request:
     branches:
       - main
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -185,7 +186,10 @@ jobs:
   publish-stack-image:
     name: Publish stack image
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # Push to main publishes :stack; workflow_dispatch rebuilds without a merge.
+    if: >
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      github.event_name == 'workflow_dispatch'
     permissions:
       contents: read
       packages: write
